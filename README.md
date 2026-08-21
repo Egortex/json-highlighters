@@ -60,3 +60,34 @@ AST-токенизатор с сохранением позиций, AST вну�
 При изменении кода библиотеки её нужно пересобрать (`npm run build:lib`),
 чтобы демо подхватило новую версию `dist/` — `vite dev` в `example/` не
 следит за исходниками `packages/json-highlighters/src` напрямую.
+
+## Публикация в npm
+
+`.github/workflows/publish.yml` публикует пакет через **npm Trusted
+Publishing (OIDC)** — без токенов и секретов в GitHub. Аутентификация в
+registry происходит через `id-token: write` permission у джобы; npm сверяет
+её с настройками Trusted Publisher у пакета на своей стороне.
+
+**Одноразовая настройка** (нужна до первого успешного паблиша — работает и
+для ещё не опубликованного пакета):
+
+1. На [npmjs.com](https://www.npmjs.com) → страница пакета (или
+   `Access Tokens` → создать пакет-заглушку, если он ни разу не публиковался)
+   → раздел **Trusted Publisher**.
+2. Указать:
+   - **Organization or user**: `Egortex`
+   - **Repository**: `json-highlighters`
+   - **Workflow filename**: `publish.yml`
+   - **Allowed actions**: `npm publish`
+3. Больше ничего не нужно — `NPM_TOKEN`/`NODE_AUTH_TOKEN` в секретах
+   репозитория не используются.
+
+Запуск релиза:
+
+```bash
+npm run release -- json-highlighters patch   # бампает версию, коммитит, тегает
+git push origin main json-highlighters-v0.1.1 # пуш тега запускает publish.yml
+```
+
+Либо вручную — вкладка **Actions** → *Publish package to npm* → *Run
+workflow*.

@@ -37,8 +37,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+
+      - name: Ensure npm CLI supports Trusted Publishing (needs >= 11.5.1)
+        run: npm install -g npm@latest
 
       - name: Resolve package
         id: package
@@ -72,6 +75,10 @@ jobs:
       - name: Build
         run: npm run build --workspace=packages/${{ steps.package.outputs.name }}
 
+      # Trusted Publishing (OIDC) — аутентификация в npm через id-token: write
+      # выше, без секретов/токенов вообще. Требует, чтобы на npmjs.com для
+      # пакета был настроен Trusted Publisher, указывающий именно на этот
+      # репозиторий + workflow-файл (см. README).
       - name: Publish
         run: |
           for i in 1 2 3; do
@@ -80,5 +87,3 @@ jobs:
             sleep 15
           done
           exit 1
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
