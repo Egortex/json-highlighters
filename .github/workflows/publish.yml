@@ -1,0 +1,84 @@
+name: Publish package to npm
+
+on:
+  push:
+    tags:
+      - "json-highlighters-v*"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Пакет для публикации"
+        type: choice
+        required: true
+        default: json-highlighters
+        options:
+          - json-highlighters
+      bump:
+        description: "Версия (для ручного запуска — поднимет версию, закоммитит и создаст тег)"
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # нужно для git push при ручном запуске (workflow_dispatch)
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve package
+        id: package
+        run: |
+          if [ -n "${{ inputs.package }}" ]; then
+            name="${{ inputs.package }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+            name="${tag%-v*}"
+          fi
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bump version, commit and tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          npm version ${{ inputs.bump }} --no-git-tag-version -w packages/${{ steps.package.outputs.name }}
+          version=$(node -p "require('./packages/${{ steps.package.outputs.name }}/package.json').version")
+          tag="${{ steps.package.outputs.name }}-v${version}"
+
+          git add "packages/${{ steps.package.outputs.name }}/package.json"
+          git commit -m "chore(${{ steps.package.outputs.name }}): release ${tag}"
+          git tag "${tag}"
+          git push origin HEAD:main "${tag}"
+
+      - name: Build
+        run: npm run build --workspace=packages/${{ steps.package.outputs.name }}
+
+      - name: Publish
+        run: |
+          for i in 1 2 3; do
+            npm publish --access public --workspace=packages/${{ steps.package.outputs.name }} && exit 0
+            echo "Publish failed, retrying in 15s..."
+            sleep 15
+          done
+          exit 1
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

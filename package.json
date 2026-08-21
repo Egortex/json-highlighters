@@ -1,0 +1,18 @@
+{
+	"name": "json-highlighters-monorepo",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"workspaces": [
+		"packages/*",
+		"example"
+	],
+	"scripts": {
+		"dev": "npm run dev --workspace=example",
+		"build": "npm run build --workspace=packages/json-highlighters && npm run build --workspace=example",
+		"build:lib": "npm run build --workspace=packages/json-highlighters",
+		"build:example": "npm run build --workspace=example",
+		"lint": "npm run lint --workspace=example",
+		"release": "node scripts/release.mjs"
+	}
+}
