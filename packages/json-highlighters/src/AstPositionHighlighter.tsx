@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import type { ChangeEvent, JSX, KeyboardEvent, UIEvent } from "react";
+import type { ChangeEvent, ClipboardEvent, JSX, KeyboardEvent, UIEvent } from "react";
 import { tokenizeWithPositions, type Token } from "./lib/jsonTokenizer";
-import { formatJson, INDENT_OPTIONS, type IndentStyle } from "./lib/formatJson";
+import { formatJson, tryFormatJson, INDENT_OPTIONS, type IndentStyle } from "./lib/formatJson";
 import { themeAttr, type JsonHighlighterTheme } from "./lib/theme";
 
 const DEFAULT_JSON = '{\n  "hello": "world"\n}';
@@ -63,8 +63,9 @@ export function AstPositionHighlighter({
   theme = "system",
   onChange,
 }: AstPositionHighlighterProps) {
-  const [rawText, setRawText] = useState(initialJson);
   const [indentStyle, setIndentStyle] = useState<IndentStyle>("2");
+  // Если initialJson уже сжат в одну строку — сразу форматируем при монтировании.
+  const [rawText, setRawText] = useState(() => tryFormatJson(initialJson, "2"));
   const highlightRef = useRef<HTMLPreElement>(null);
 
   // Токенизируем на каждое изменение текста; result.valid/result.error
@@ -93,6 +94,22 @@ export function AstPositionHighlighter({
       setText(formatJson(rawText, indentStyle));
     } catch {
       // Токенизатор уже показывает статус ошибки выше — второй раз не дублируем.
+    }
+  }
+
+  function handlePaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    // Как и в regex-варианте: если результат вставки — валидный JSON,
+    // сразу форматируем его вместо сжатой в одну строку простыни.
+    const el = e.currentTarget;
+    const pasted = e.clipboardData.getData("text/plain");
+    const { selectionStart, selectionEnd, value } = el;
+    const merged = value.slice(0, selectionStart) + pasted + value.slice(selectionEnd);
+    try {
+      const formatted = formatJson(merged, indentStyle);
+      e.preventDefault();
+      setText(formatted);
+    } catch {
+      // невалидный JSON после вставки — обычная вставка как есть.
     }
   }
 
@@ -161,6 +178,7 @@ export function AstPositionHighlighter({
           className="json-viewer__textarea"
           value={rawText}
           onChange={handleChange}
+          onPaste={handlePaste}
           onScroll={handleScroll}
           onKeyDown={handleKeyDown}
           spellCheck={false}

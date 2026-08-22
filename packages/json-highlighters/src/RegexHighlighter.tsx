@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
-import type { ChangeEvent, KeyboardEvent, UIEvent } from "react";
-import { formatJson, INDENT_OPTIONS, type IndentStyle } from "./lib/formatJson";
+import type { ChangeEvent, ClipboardEvent, KeyboardEvent, UIEvent } from "react";
+import { formatJson, tryFormatJson, INDENT_OPTIONS, type IndentStyle } from "./lib/formatJson";
 import { themeAttr, type JsonHighlighterTheme } from "./lib/theme";
 
 const DEFAULT_JSON = '{\n  "hello": "world"\n}';
@@ -78,8 +78,11 @@ export function RegexHighlighter({
   theme = "system",
   onChange,
 }: RegexHighlighterProps) {
-  const [rawText, setRawText] = useState(initialJson);
   const [indentStyle, setIndentStyle] = useState<IndentStyle>("2");
+  // Если initialJson уже сжат в одну строку (например, только что пришёл
+  // по сети как есть) — сразу форматируем его текущим стилем отступа,
+  // чтобы не показывать нечитаемую простыню сразу при монтировании.
+  const [rawText, setRawText] = useState(() => tryFormatJson(initialJson, "2"));
   // Regex-подсветка не требует валидного JSON, а вот форматирование —
   // требует (нужно реально распарсить текст, а не просто раскрасить его),
   // поэтому ошибка форматирования хранится отдельно от самой подсветки.
@@ -109,6 +112,25 @@ export function RegexHighlighter({
       setFormatError(null);
     } catch (err) {
       setFormatError(err instanceof Error ? err.message : "Не удалось отформатировать");
+    }
+  }
+
+  function handlePaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    // Считаем, каким будет текст ПОСЛЕ вставки (сама вставка ещё не
+    // произошла — событие paste срабатывает до неё), и если результат —
+    // валидный JSON, сразу форматируем его вместо того, чтобы оставлять
+    // вставленный кусок сжатым в одну строку. Если невалиден — просто даём
+    // вставке пройти как обычно (preventDefault не вызываем).
+    const el = e.currentTarget;
+    const pasted = e.clipboardData.getData("text/plain");
+    const { selectionStart, selectionEnd, value } = el;
+    const merged = value.slice(0, selectionStart) + pasted + value.slice(selectionEnd);
+    try {
+      const formatted = formatJson(merged, indentStyle);
+      e.preventDefault();
+      setText(formatted);
+    } catch {
+      // невалидный JSON после вставки — обычная вставка как есть.
     }
   }
 
@@ -169,6 +191,7 @@ export function RegexHighlighter({
           className="json-viewer__textarea"
           value={rawText}
           onChange={handleChange}
+          onPaste={handlePaste}
           onScroll={handleScroll}
           onKeyDown={handleKeyDown}
           spellCheck={false}

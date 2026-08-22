@@ -6,7 +6,11 @@ import {
 import { sampleData } from "./data/sampleData";
 import "./App.css";
 
-const initialJson = JSON.stringify(sampleData, null, 2);
+// sampleData — уже готовый JSON-текст (строка), а не JS-объект: именно так
+// данные и приходят по сети (fetch().then(r => r.text())), без JSON.parse
+// на этой стороне. Сжимаем в одну строку (parse + stringify без отступа),
+// чтобы демо наглядно показывало автоформат компонентов при монтировании.
+const initialJson = JSON.stringify(JSON.parse(sampleData));
 
 function App() {
 	return (

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent } from "react";
+import type { ClipboardEvent, FormEvent, KeyboardEvent } from "react";
 import { tokenizeWithPositions, type TokenizeResult } from "./lib/jsonTokenizer";
-import { formatJson, INDENT_OPTIONS, type IndentStyle } from "./lib/formatJson";
+import { formatJson, tryFormatJson, INDENT_OPTIONS, type IndentStyle } from "./lib/formatJson";
 import { themeAttr, type JsonHighlighterTheme } from "./lib/theme";
 
 const DEFAULT_JSON = '{\n  "hello": "world"\n}';
@@ -111,15 +111,17 @@ export function AstContentEditableHighlighter({
   onChange,
 }: AstContentEditableHighlighterProps) {
   const editorRef = useRef<HTMLPreElement>(null);
-  const rawTextRef = useRef(initialJson);
+  // Если initialJson уже сжат в одну строку — сразу форматируем при монтировании.
+  const initialText = useRef(tryFormatJson(initialJson, "2")).current;
+  const rawTextRef = useRef(initialText);
   const debounceTimer = useRef<number | undefined>(undefined);
-  const [status, setStatus] = useState<TokenizeResult>(() => tokenizeWithPositions(initialJson));
+  const [status, setStatus] = useState<TokenizeResult>(() => tokenizeWithPositions(initialText));
   const [indentStyle, setIndentStyle] = useState<IndentStyle>("2");
 
   useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
-    el.innerHTML = buildHighlightedHtml(initialJson);
+    el.innerHTML = buildHighlightedHtml(initialText);
 
     return () => {
       if (debounceTimer.current) window.clearTimeout(debounceTimer.current);
@@ -140,27 +142,62 @@ export function AstContentEditableHighlighter({
     setCaretOffset(el, caret);
   }
 
-  function handleFormat() {
+  /** Подменяет содержимое на уже отформатированный текст и ставит курсор
+   * в конец — используется и кнопкой «Форматировать», и автоформатом при
+   * вставке. Отменяет отложенную дебаунс-перекраску, чтобы она не сработала
+   * поверх со старой (уже неактуальной) позицией курсора. */
+  function applyFormatted(formatted: string) {
     const el = editorRef.current;
     if (!el) return;
-    // Кнопка задизейблена при status.valid === false, но на всякий случай
-    // подстрахуемся: без валидного текста форматировать нечего.
-    if (!status.valid) return;
-
-    // Отменяем ожидающий дебаунс — иначе он через ~400мс перекрасит поверх
-    // отформатированного текста ещё раз со старым сохранённым курсором.
     if (debounceTimer.current) window.clearTimeout(debounceTimer.current);
-
-    const formatted = formatJson(rawTextRef.current, indentStyle);
     rawTextRef.current = formatted;
     const result = tokenizeWithPositions(formatted);
     setStatus(result);
     el.innerHTML = buildHighlightedHtml(formatted, result);
-    // После переформатирования старая позиция курсора уже не имеет
-    // смысла (текст пересобран заново) — ставим курсор в конец.
     setCaretOffset(el, formatted.length);
     el.focus();
     onChange?.(formatted);
+  }
+
+  function handleFormat() {
+    // Кнопка задизейблена при status.valid === false, но на всякий случай
+    // подстрахуемся: без валидного текста форматировать нечего.
+    if (!status.valid) return;
+    applyFormatted(formatJson(rawTextRef.current, indentStyle));
+  }
+
+  function handlePaste(e: ClipboardEvent<HTMLPreElement>) {
+    const el = editorRef.current;
+    if (!el) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+
+    // Считаем офсеты начала и конца текущего выделения (обычно это просто
+    // курсор — начало и конец совпадают), чтобы вставить текст на нужное
+    // место в "плоском" тексте, а не просто в конец.
+    const startRange = range.cloneRange();
+    startRange.selectNodeContents(el);
+    startRange.setEnd(range.startContainer, range.startOffset);
+    const start = startRange.toString().length;
+
+    const endRange = range.cloneRange();
+    endRange.selectNodeContents(el);
+    endRange.setEnd(range.endContainer, range.endOffset);
+    const end = endRange.toString().length;
+
+    const pasted = e.clipboardData.getData("text/plain");
+    const current = el.textContent ?? "";
+    const merged = current.slice(0, start) + pasted + current.slice(end);
+
+    try {
+      const formatted = formatJson(merged, indentStyle);
+      e.preventDefault();
+      applyFormatted(formatted);
+    } catch {
+      // Невалидный JSON после вставки — даём вставке пройти как обычно,
+      // дальше её подхватит обычный дебаунс-перекрас через onInput.
+    }
   }
 
   function handleInput(e: FormEvent<HTMLPreElement>) {
@@ -232,6 +269,7 @@ export function AstContentEditableHighlighter({
         suppressContentEditableWarning
         onInput={handleInput}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         spellCheck={false}
         aria-label="Редактируемый JSON-текст (contentEditable AST-подсветка)"
       />

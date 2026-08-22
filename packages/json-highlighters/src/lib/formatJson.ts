@@ -26,3 +26,18 @@ export function formatJson(text: string, style: IndentStyle): string {
   const parsed = JSON.parse(text);
   return JSON.stringify(parsed, null, indentParam(style));
 }
+
+/**
+ * Как `formatJson`, но без исключений — используется там, где невалидный
+ * JSON не ошибка, а нормальный промежуточный случай: первоначальная
+ * загрузка (`initialJson` может прийти сжатым в одну строку, как есть с
+ * сети) и вставка текста из буфера обмена. Если распарсить не удалось,
+ * возвращает исходный текст без изменений.
+ */
+export function tryFormatJson(text: string, style: IndentStyle): string {
+  try {
+    return formatJson(text, style);
+  } catch {
+    return text;
+  }
+}
