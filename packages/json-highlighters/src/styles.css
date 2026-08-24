@@ -278,3 +278,37 @@ pre.json-viewer__editable:focus {
 .json-null {
   color: var(--jh-null);
 }
+
+/* ---------- Цвета токенов YAML (YamlHighlighter) — переиспользуют те же
+   переменные темы, что и JSON-варианты, только добавляют комментарий и
+   маркер списка ---------- */
+
+.yaml-key {
+  color: var(--jh-key);
+}
+
+.yaml-string {
+  color: var(--jh-string);
+}
+
+.yaml-number {
+  color: var(--jh-number);
+}
+
+.yaml-boolean {
+  color: var(--jh-boolean);
+}
+
+.yaml-null {
+  color: var(--jh-null);
+}
+
+.yaml-comment {
+  color: var(--jh-label);
+  font-style: italic;
+}
+
+.yaml-dash {
+  color: var(--jh-border-focus);
+  font-weight: 600;
+}

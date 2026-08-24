@@ -2,8 +2,9 @@ import {
 	RegexHighlighter,
 	AstPositionHighlighter,
 	AstContentEditableHighlighter,
+	YamlHighlighter,
 } from "@chepchik/json-highlighters";
-import { sampleData } from "./data/sampleData";
+import { sampleData, sampleYaml } from "./data/sampleData";
 import "./App.css";
 
 // sampleData — уже готовый JSON-текст (строка), а не JS-объект: именно так
@@ -25,11 +26,13 @@ function App() {
 					смещение каждого токена в исходной строке — за счёт этого может наложить живую
 					посимвольно выровненную textarea, как и regex-вариант.{" "}
 					<strong>AST contentEditable</strong> редактирует прямо внутри раскрашенного элемента,
-					перекрашивая с дебаунсом и сохраняя/восстанавливая позицию курсора при каждой перерисовке.
+					перекрашивая с дебаунсом и сохраняя/восстанавливая позицию курсора при каждой перерисовке.{" "}
+					<strong>YAML</strong> — младшая сестра Regex-варианта: та же прозрачная textarea поверх
+					подсветки, но построчная грамматика для ключей, списков и комментариев.
 				</p>
 			</header>
 
-			{/* Три панели поровну делят экран (см. .split-screen в App.css) —
+			{/* Четыре панели поровну делят экран (см. .split-screen в App.css) —
 			    на узких экранах складываются в колонку. Страница у демо всегда
 			    тёмная (см. index.css), поэтому явно фиксируем theme="dark" —
 			    иначе при светлой системной теме компоненты (по умолчанию
@@ -43,6 +46,9 @@ function App() {
 				</div>
 				<div className='split-half'>
 					<AstContentEditableHighlighter initialJson={initialJson} theme='dark' />
+				</div>
+				<div className='split-half'>
+					<YamlHighlighter initialYaml={sampleYaml} theme='dark' />
 				</div>
 			</main>
 		</>
