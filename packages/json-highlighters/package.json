@@ -1,6 +1,6 @@
 {
 	"name": "@chepchik/json-highlighters",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"description": "Три подхода к живой редактируемой подсветке JSON в React: regex, AST-токенизатор с позициями и AST внутри contentEditable.",
 	"repository": {
 		"type": "git",
