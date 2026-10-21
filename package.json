@@ -13,6 +13,12 @@
 		"build:lib": "npm run build --workspace=packages/json-highlighters",
 		"build:example": "npm run build --workspace=example",
 		"lint": "npm run lint --workspace=example",
+		"test": "npm run test --workspace=packages/json-highlighters",
+		"coverage": "npm run coverage --workspace=packages/json-highlighters",
+		"test:e2e": "npm run build:lib && playwright test",
 		"release": "node scripts/release.mjs"
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.63.0"
 	}
 }

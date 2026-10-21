@@ -196,6 +196,9 @@ export function tokenizeWithPositions(input: string): TokenizeResult {
     return {
       tokens,
       valid: false,
+      /* v8 ignore next -- каждый throw внутри parseValue/parseObject/parseArray/expect
+       * это всегда `new Error(...)`, так что String(err)-ветка недостижима при
+       * текущей реализации; оставлена как защита на случай будущих изменений. */
       error: err instanceof Error ? err.message : String(err),
     };
   }

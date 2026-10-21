@@ -59,7 +59,7 @@ function classify(match: string): string {
   return "yaml-key";
 }
 
-function highlightYaml(yaml: string): string {
+export function highlightYaml(yaml: string): string {
   const escaped = escapeHtml(yaml);
   return escaped.replace(YAML_TOKEN_REGEX, (match) => `<span class="${classify(match)}">${match}</span>`);
 }
@@ -86,6 +86,8 @@ export function YamlHighlighter({
 
   function handleScroll(e: UIEvent<HTMLTextAreaElement>) {
     const pre = highlightRef.current;
+    /* v8 ignore next -- highlightRef указывает на смонтированный <pre>, который
+     * рендерится безусловно рядом с textarea. */
     if (!pre) return;
     pre.scrollTop = e.currentTarget.scrollTop;
     pre.scrollLeft = e.currentTarget.scrollLeft;

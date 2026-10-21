@@ -19,3 +19,5 @@ export { formatJson, INDENT_OPTIONS } from "./lib/formatJson";
 export type { IndentStyle } from "./lib/formatJson";
 
 export type { JsonHighlighterTheme } from "./lib/theme";
+
+export type { JsonEditorHandle, JsonValidity } from "./lib/editorApi";

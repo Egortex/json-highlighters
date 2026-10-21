@@ -5,6 +5,7 @@ import {
 	YamlHighlighter,
 } from "@chepchik/json-highlighters";
 import { sampleData, sampleYaml } from "./data/sampleData";
+import { JsonPanel } from "./JsonPanel";
 import "./App.css";
 
 // sampleData — уже готовый JSON-текст (строка), а не JS-объект: именно так
@@ -36,18 +37,17 @@ function App() {
 			    на узких экранах складываются в колонку. Страница у демо всегда
 			    тёмная (см. index.css), поэтому явно фиксируем theme="dark" —
 			    иначе при светлой системной теме компоненты (по умолчанию
-			    theme="system") стали бы светлыми на тёмном фоне страницы. */}
+			    theme="system") стали бы светлыми на тёмном фоне страницы.
+			    Тулбар и статус JSON-панелей рисует JsonPanel, а не сами компоненты. */}
 			<main className='split-screen'>
-				<div className='split-half'>
-					<RegexHighlighter initialJson={initialJson} theme='dark' />
-				</div>
-				<div className='split-half'>
-					<AstPositionHighlighter initialJson={initialJson} theme='dark' />
-				</div>
-				<div className='split-half'>
-					<AstContentEditableHighlighter initialJson={initialJson} theme='dark' />
-				</div>
-				<div className='split-half'>
+				<JsonPanel Editor={RegexHighlighter} panel='regex' initialJson={initialJson} />
+				<JsonPanel Editor={AstPositionHighlighter} panel='ast-position' initialJson={initialJson} />
+				<JsonPanel
+					Editor={AstContentEditableHighlighter}
+					panel='ast-contenteditable'
+					initialJson={initialJson}
+				/>
+				<div className='split-half' data-panel='yaml'>
 					<YamlHighlighter initialYaml={sampleYaml} theme='dark' />
 				</div>
 			</main>

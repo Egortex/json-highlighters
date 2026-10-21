@@ -1,7 +1,9 @@
-import { useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, KeyboardEvent, UIEvent } from "react";
-import { formatJson, tryFormatJson, INDENT_OPTIONS, type IndentStyle } from "./lib/formatJson";
+import { formatJson, tryFormatJson, type IndentStyle } from "./lib/formatJson";
+import { mapCaretAcrossFormat } from "./lib/caretMapping";
 import { themeAttr, type JsonHighlighterTheme } from "./lib/theme";
+import type { JsonEditorHandle, JsonValidity } from "./lib/editorApi";
 
 const DEFAULT_JSON = '{\n  "hello": "world"\n}';
 
@@ -14,6 +16,10 @@ export interface RegexHighlighterProps {
   theme?: JsonHighlighterTheme;
   /** Вызывается с текущим текстом на каждое изменение. */
   onChange?: (text: string) => void;
+  /** Стиль отступа для автоформата при вставке и для `ref.format()` без аргумента. */
+  indent?: IndentStyle;
+  /** Вызывается при монтировании и при каждой смене валидности/текста ошибки. */
+  onValidityChange?: (validity: JsonValidity) => void;
 }
 
 /**
@@ -72,22 +78,31 @@ function highlightJson(json: string): string {
   });
 }
 
-export function RegexHighlighter({
+export const RegexHighlighter = forwardRef<JsonEditorHandle, RegexHighlighterProps>(function RegexHighlighter({
   initialJson = DEFAULT_JSON,
   title = "Regex-подсветка",
   theme = "system",
   onChange,
-}: RegexHighlighterProps) {
-  const [indentStyle, setIndentStyle] = useState<IndentStyle>("2");
+  indent = "2",
+  onValidityChange,
+}, ref) {
   // Если initialJson уже сжат в одну строку (например, только что пришёл
   // по сети как есть) — сразу форматируем его текущим стилем отступа,
   // чтобы не показывать нечитаемую простыню сразу при монтировании.
-  const [rawText, setRawText] = useState(() => tryFormatJson(initialJson, "2"));
-  // Regex-подсветка не требует валидного JSON, а вот форматирование —
-  // требует (нужно реально распарсить текст, а не просто раскрасить его),
-  // поэтому ошибка форматирования хранится отдельно от самой подсветки.
-  const [formatError, setFormatError] = useState<string | null>(null);
+  const [rawText, setRawText] = useState(() => tryFormatJson(initialJson, indent));
+  // Regex-подсветке валидность не нужна, но флаг для хоста (и для format())
+  // всё равно считаем — через настоящий JSON.parse, а не через regex.
+  const validity = useMemo<JsonValidity>(() => {
+    try {
+      JSON.parse(rawText);
+      return { valid: true };
+    } catch (err) {
+      /* v8 ignore next -- JSON.parse бросает только SyntaxError. */
+      return { valid: false, error: err instanceof Error ? err.message : "Невалидный JSON" };
+    }
+  }, [rawText]);
   const highlightRef = useRef<HTMLPreElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Regex-подсветке не нужна валидная JSON-структура, поэтому она
   // безусловно пересчитывается на каждое нажатие клавиши — текст
@@ -106,13 +121,37 @@ export function RegexHighlighter({
     setText(e.target.value);
   }
 
-  function handleFormat() {
-    try {
-      setText(formatJson(rawText, indentStyle));
-      setFormatError(null);
-    } catch (err) {
-      setFormatError(err instanceof Error ? err.message : "Не удалось отформатировать");
+  useEffect(() => {
+    onValidityChange?.(validity);
+    // См. AstPositionHighlighter: колбэк хоста намеренно не в зависимостях.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validity.valid, validity.error]);
+
+  useImperativeHandle(ref, () => ({ format }));
+
+  function format(style: IndentStyle = indent): boolean {
+    if (!validity.valid) return false;
+    const el = textareaRef.current;
+    const formatted = formatJson(rawText, style);
+    if (el) {
+      // См. handlePaste: execCommand вместо setText сохраняет шаг в
+      // нативном undo-стеке, а mapCaretAcrossFormat не даёт курсору
+      // улететь в конец документа при явном вызове format().
+      const mappedCaret = mapCaretAcrossFormat(rawText, el.selectionStart, formatted);
+      el.focus();
+      el.setSelectionRange(0, el.value.length);
+      document.execCommand("insertText", false, formatted);
+      el.setSelectionRange(mappedCaret, mappedCaret);
     }
+    // textareaRef всегда указывает на смонтированный <textarea> к моменту,
+    // когда хост может вызвать ref.format(); эта ветка — защита только от
+    // гипотетического вызова до первого рендера.
+    /* v8 ignore next */
+    else {
+      /* v8 ignore next */
+      setText(formatted);
+    }
+    return true;
   }
 
   function handlePaste(e: ClipboardEvent<HTMLTextAreaElement>) {
@@ -126,9 +165,23 @@ export function RegexHighlighter({
     const { selectionStart, selectionEnd, value } = el;
     const merged = value.slice(0, selectionStart) + pasted + value.slice(selectionEnd);
     try {
-      const formatted = formatJson(merged, indentStyle);
+      const formatted = formatJson(merged, indent);
       e.preventDefault();
-      setText(formatted);
+      // Курсор должен остаться сразу ПОСЛЕ вставленного текста, а не
+      // улететь в конец документа — formatJson меняет только whitespace, не
+      // порядок значимых токенов, так что mapCaretAcrossFormat находит
+      // соответствующую позицию в переформатированном тексте.
+      const caretAfterPaste = selectionStart + pasted.length;
+      const mappedCaret = mapCaretAcrossFormat(merged, caretAfterPaste, formatted);
+      // Программная замена value через React (setText -> setRawText) сбрасывает
+      // нативный undo-стек textarea целиком — после такой вставки Ctrl+Z
+      // молча ничего не делает. execCommand("insertText", ...) заменяет
+      // содержимое так же, как обычный ввод: остаётся ОДНИМ полноценным
+      // шагом истории, который браузер умеет откатывать по Ctrl+Z.
+      el.focus();
+      el.setSelectionRange(0, value.length);
+      document.execCommand("insertText", false, formatted);
+      el.setSelectionRange(mappedCaret, mappedCaret);
     } catch {
       // невалидный JSON после вставки — обычная вставка как есть.
     }
@@ -138,6 +191,9 @@ export function RegexHighlighter({
     // Слой с подсветкой (<pre>) — отдельный DOM-элемент со своим скроллом,
     // поэтому его нужно синхронизировать со скроллом textarea вручную.
     const pre = highlightRef.current;
+    /* v8 ignore next -- highlightRef указывает на смонтированный <pre>, который
+     * рендерится безусловно рядом с textarea; guard защищает только от гонки
+     * между unmount и последним событием scroll. */
     if (!pre) return;
     pre.scrollTop = e.currentTarget.scrollTop;
     pre.scrollLeft = e.currentTarget.scrollLeft;
@@ -161,25 +217,6 @@ export function RegexHighlighter({
   return (
     <div className="json-viewer json-viewer--regex" data-theme={themeAttr(theme)}>
       {title !== null && <h3>{title}</h3>}
-      <div className="json-viewer__toolbar">
-        <label htmlFor="regex-indent-select">Отступ:</label>
-        <select
-          id="regex-indent-select"
-          className="json-viewer__select"
-          value={indentStyle}
-          onChange={(e) => setIndentStyle(e.target.value as IndentStyle)}
-        >
-          {INDENT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <button type="button" className="json-viewer__format-btn" onClick={handleFormat}>
-          Форматировать
-        </button>
-        {formatError && <span className="json-viewer__format-error">⚠ {formatError}</span>}
-      </div>
       <div className="json-viewer__editor">
         <pre
           ref={highlightRef}
@@ -188,6 +225,7 @@ export function RegexHighlighter({
           dangerouslySetInnerHTML={{ __html: highlighted }}
         />
         <textarea
+          ref={textareaRef}
           className="json-viewer__textarea"
           value={rawText}
           onChange={handleChange}
@@ -202,6 +240,6 @@ export function RegexHighlighter({
       </div>
     </div>
   );
-}
+});
 
 export default RegexHighlighter;

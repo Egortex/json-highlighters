@@ -1,8 +1,10 @@
-import { useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, JSX, KeyboardEvent, UIEvent } from "react";
 import { tokenizeWithPositions, type Token } from "./lib/jsonTokenizer";
-import { formatJson, tryFormatJson, INDENT_OPTIONS, type IndentStyle } from "./lib/formatJson";
+import { formatJson, tryFormatJson, type IndentStyle } from "./lib/formatJson";
+import { mapCaretAcrossFormat } from "./lib/caretMapping";
 import { themeAttr, type JsonHighlighterTheme } from "./lib/theme";
+import type { JsonEditorHandle, JsonValidity } from "./lib/editorApi";
 
 const DEFAULT_JSON = '{\n  "hello": "world"\n}';
 
@@ -15,6 +17,10 @@ export interface AstPositionHighlighterProps {
   theme?: JsonHighlighterTheme;
   /** Вызывается с текущим текстом на каждое изменение. */
   onChange?: (text: string) => void;
+  /** Стиль отступа для автоформата при вставке и для `ref.format()` без аргумента. */
+  indent?: IndentStyle;
+  /** Вызывается при монтировании и при каждой смене валидности/текста ошибки. */
+  onValidityChange?: (validity: JsonValidity) => void;
 }
 
 /**
@@ -34,6 +40,11 @@ function renderTokens(text: string, tokens: Token[]): JSX.Element[] {
   tokens.forEach((t, idx) => {
     // Пробел между токенами (например, между запятой и открывающей
     // кавычкой) не подсвечивается, но должен попасть в вывод как есть.
+    /* v8 ignore next 3 -- tokenizeWithPositions уже сам явно токенизирует
+     * весь whitespace (см. consumeWhitespace в jsonTokenizer.ts), так что
+     * token.start всегда равен предыдущему cursor — реального разрыва между
+     * соседними токенами при текущей реализации токенизатора не бывает;
+     * оставлено как защита от будущих изменений грамматики. */
     if (t.start > cursor) {
       els.push(<span key={`gap-${idx}`}>{text.slice(cursor, t.start)}</span>);
     }
@@ -57,25 +68,36 @@ function renderTokens(text: string, tokens: Token[]): JSX.Element[] {
   return els;
 }
 
-export function AstPositionHighlighter({
+export const AstPositionHighlighter = forwardRef<JsonEditorHandle, AstPositionHighlighterProps>(function AstPositionHighlighter({
   initialJson = DEFAULT_JSON,
   title = "AST-токенизатор + позиции",
   theme = "system",
   onChange,
-}: AstPositionHighlighterProps) {
-  const [indentStyle, setIndentStyle] = useState<IndentStyle>("2");
+  indent = "2",
+  onValidityChange,
+}, ref) {
   // Если initialJson уже сжат в одну строку — сразу форматируем при монтировании.
-  const [rawText, setRawText] = useState(() => tryFormatJson(initialJson, "2"));
+  const [rawText, setRawText] = useState(() => tryFormatJson(initialJson, indent));
   const highlightRef = useRef<HTMLPreElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Токенизируем на каждое изменение текста; result.valid/result.error
-  // используются и для статус-строки, и для того, чтобы не подсвечивать
+  // уходят хосту через onValidityChange и заодно не дают подсвечивать
   // неразобранный хвост.
   const result = useMemo(() => tokenizeWithPositions(rawText), [rawText]);
   const highlighted = useMemo(
     () => renderTokens(rawText, result.tokens),
     [rawText, result.tokens]
   );
+
+  useEffect(() => {
+    onValidityChange?.(result.valid ? { valid: true } : { valid: false, error: result.error });
+    // Колбэк хоста намеренно не в зависимостях — инлайн-функция менялась бы
+    // на каждом рендере и дёргала бы уведомление без реальной смены статуса.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result.valid, result.error]);
+
+  useImperativeHandle(ref, () => ({ format }));
 
   function setText(next: string) {
     setRawText(next);
@@ -86,14 +108,34 @@ export function AstPositionHighlighter({
     setText(e.target.value);
   }
 
-  function handleFormat() {
-    // Кнопка задизейблена, пока result.valid === false, так что здесь
-    // JSON.parse внутри formatJson не должен падать — но на случай
-    // расхождения между токенизатором и JSON.parse подстрахуемся try/catch.
+  function format(style: IndentStyle = indent): boolean {
+    if (!result.valid) return false;
+    // На случай расхождения между токенизатором и JSON.parse внутри
+    // formatJson подстрахуемся try/catch.
+    const el = textareaRef.current;
     try {
-      setText(formatJson(rawText, indentStyle));
+      const formatted = formatJson(rawText, style);
+      if (el) {
+        // См. handlePaste: execCommand сохраняет шаг в нативном undo-стеке,
+        // а mapCaretAcrossFormat не даёт курсору улететь в конец документа.
+        const mappedCaret = mapCaretAcrossFormat(rawText, el.selectionStart, formatted);
+        el.focus();
+        el.setSelectionRange(0, el.value.length);
+        document.execCommand("insertText", false, formatted);
+        el.setSelectionRange(mappedCaret, mappedCaret);
+      }
+      // textareaRef всегда указывает на смонтированный <textarea> к моменту,
+      // когда хост может вызвать ref.format(); эта ветка недостижима при обычном использовании.
+      /* v8 ignore next */
+      else {
+        /* v8 ignore next */
+        setText(formatted);
+      }
+      return true;
     } catch {
-      // Токенизатор уже показывает статус ошибки выше — второй раз не дублируем.
+      /* v8 ignore next -- result.valid уже проверен выше; это защита от
+       * расхождения токенизатора с JSON.parse. */
+      return false;
     }
   }
 
@@ -105,9 +147,18 @@ export function AstPositionHighlighter({
     const { selectionStart, selectionEnd, value } = el;
     const merged = value.slice(0, selectionStart) + pasted + value.slice(selectionEnd);
     try {
-      const formatted = formatJson(merged, indentStyle);
+      const formatted = formatJson(merged, indent);
       e.preventDefault();
-      setText(formatted);
+      // См. RegexHighlighter.handlePaste: mapCaretAcrossFormat не даёт
+      // курсору улететь в конец документа, а execCommand вместо setText
+      // сохраняет вставку как один шаг нативного undo-стека вместо того,
+      // чтобы полностью его сбросить программной заменой value.
+      const caretAfterPaste = selectionStart + pasted.length;
+      const mappedCaret = mapCaretAcrossFormat(merged, caretAfterPaste, formatted);
+      el.focus();
+      el.setSelectionRange(0, value.length);
+      document.execCommand("insertText", false, formatted);
+      el.setSelectionRange(mappedCaret, mappedCaret);
     } catch {
       // невалидный JSON после вставки — обычная вставка как есть.
     }
@@ -117,6 +168,8 @@ export function AstPositionHighlighter({
     // Синхронизируем скролл цветного <pre> со скроллом textarea — это
     // два разных DOM-элемента, у каждого свой независимый scrollTop.
     const pre = highlightRef.current;
+    /* v8 ignore next -- highlightRef указывает на смонтированный <pre>, который
+     * рендерится безусловно рядом с textarea. */
     if (!pre) return;
     pre.scrollTop = e.currentTarget.scrollTop;
     pre.scrollLeft = e.currentTarget.scrollLeft;
@@ -139,42 +192,12 @@ export function AstPositionHighlighter({
   return (
     <div className="json-viewer json-viewer--ast-position" data-theme={themeAttr(theme)}>
       {title !== null && <h3>{title}</h3>}
-      <div className="json-viewer__toolbar">
-        <label htmlFor="ast-position-indent-select">Отступ:</label>
-        <select
-          id="ast-position-indent-select"
-          className="json-viewer__select"
-          value={indentStyle}
-          onChange={(e) => setIndentStyle(e.target.value as IndentStyle)}
-        >
-          {INDENT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="json-viewer__format-btn"
-          onClick={handleFormat}
-          disabled={!result.valid}
-          title={result.valid ? undefined : "Сначала исправьте JSON — форматированию нужно валидное дерево"}
-        >
-          Форматировать
-        </button>
-      </div>
-      <p
-        className={`json-viewer__status ${
-          result.valid ? "json-viewer__status--ok" : "json-viewer__status--error"
-        }`}
-      >
-        {result.valid ? "✓ JSON валиден" : `⚠ ${result.error}`}
-      </p>
       <div className="json-viewer__editor">
         <pre ref={highlightRef} className="json-viewer__highlight" aria-hidden="true">
           {highlighted}
         </pre>
         <textarea
+          ref={textareaRef}
           className="json-viewer__textarea"
           value={rawText}
           onChange={handleChange}
@@ -189,6 +212,6 @@ export function AstPositionHighlighter({
       </div>
     </div>
   );
-}
+});
 
 export default AstPositionHighlighter;

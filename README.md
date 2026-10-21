@@ -2,13 +2,15 @@
 
 Монорепозиторий (npm workspaces) с библиотекой `@chepchik/json-highlighters` —
 три самописных подхода к живой, редактируемой подсветке синтаксиса JSON в
-React 18/19 — и демо-приложением, показывающим все три рядом друг с другом.
+React 18/19 плюс подсветка YAML — и демо-приложением, показывающим все
+четыре компонента рядом друг с другом.
 
 ```
 .
 ├── packages/
 │   └── json-highlighters/   ← сама библиотека (публикуется в npm)
-└── example/                 ← демо-приложение на Vite + React, использует библиотеку
+├── example/                 ← демо-приложение на Vite + React, использует библиотеку
+└── e2e/                     ← Playwright-тесты против демо (playwright.config.ts в корне)
 ```
 
 ## Быстрый старт
@@ -25,13 +27,21 @@ npm run dev                # запускает демо-приложение (e
 npm run build              # собирает библиотеку, затем демо-приложение
 npm run build:example      # собирает только демо-приложение
 npm run lint                # линт демо-приложения (oxlint)
+npm test                    # юнит- и компонентные тесты библиотеки (Vitest)
+npm run coverage            # то же с отчётом покрытия
+npm run test:e2e            # собирает библиотеку и гоняет Playwright против демо
 ```
 
 ## Библиотека — `@chepchik/json-highlighters`
 
-Три компонента с одинаковым API (`initialJson`, `title`, `theme`,
-`onChange`), поддержка React 18 и 19, CSS одной строкой, тёмная/светлая
-тема (по умолчанию следует `prefers-color-scheme`, либо фиксируется явно):
+Три JSON-компонента с одинаковым API (`initialJson`, `title`, `theme`,
+`onChange`, `indent`, `onValidityChange`, `ref` с методом `format()`) и
+`YamlHighlighter`. Поддержка React 18 и 19, CSS одной строкой, тёмная/светлая
+тема (по умолчанию следует `prefers-color-scheme`, либо фиксируется явно).
+
+Компоненты рендерят **только редактор**: тулбар (отступ, «Форматировать») и
+галочку «✓ JSON валиден» рисует хост — по флагу из `onValidityChange` и
+вызовом `ref.current.format()`:
 
 ```tsx
 import "@chepchik/json-highlighters/styles.css";
@@ -39,12 +49,15 @@ import {
   RegexHighlighter,
   AstPositionHighlighter,
   AstContentEditableHighlighter,
+  YamlHighlighter,
+  type JsonEditorHandle,
+  type JsonValidity,
 } from "@chepchik/json-highlighters";
 ```
 
-Полное описание того, как устроен каждый из трёх подходов (regex-подсветка,
-AST-токенизатор с сохранением позиций, AST внутри `contentEditable`),
-компромиссы каждого, логика форматирования (отступы: пробелы/таб) и как
+Полное описание того, как устроен каждый из подходов (regex-подсветка,
+AST-токенизатор с сохранением позиций, AST внутри `contentEditable`, YAML),
+компромиссы каждого, API форматирования и валидности, миграция с 0.1.x и как
 устроены темы — в
 **[`packages/json-highlighters/README.md`](./packages/json-highlighters/README.md)**.
 
@@ -53,9 +66,14 @@ AST-токенизатор с сохранением позиций, AST вну�
 Обычное Vite + React + TypeScript приложение, зависящее от
 `@chepchik/json-highlighters` через npm workspaces (симлинк в
 `node_modules/@chepchik/json-highlighters` на `packages/json-highlighters`).
-Показывает все три компонента на одной странице в раскладке 50/50/50
-(`.split-screen` в `example/src/App.css`) с общими стартовыми данными из
+Показывает все четыре компонента на одной странице, панели делят ширину
+поровну (`.split-screen` в `example/src/App.css`), стартовые данные — из
 `example/src/data/sampleData.ts`.
+
+Тулбар и статус под каждой JSON-панелью рисует `example/src/JsonPanel.tsx` —
+это и есть образец того, как хосту собрать свой UI вокруг редактора
+(`onValidityChange` → галочка, `ref.format()` → кнопка «Форматировать»).
+По атрибуту `data-panel` на панелях e2e-тесты находят эти контролы.
 
 При изменении кода библиотеки её нужно пересобрать (`npm run build:lib`),
 чтобы демо подхватило новую версию `dist/` — `vite dev` в `example/` не
