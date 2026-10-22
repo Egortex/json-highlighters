@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent, UIEvent } from "react";
 import { themeAttr, type JsonHighlighterTheme } from "./lib/theme";
+import { useOverlaySync } from "./lib/overlaySync";
 
 const DEFAULT_YAML = "hello: world\nlist:\n  - one\n  - two\n";
 
@@ -71,7 +72,9 @@ export function YamlHighlighter({
   onChange,
 }: YamlHighlighterProps) {
   const highlightRef = useRef<HTMLPreElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [rawText, setRawTextState] = useState(initialYaml);
+  useOverlaySync(highlightRef, textareaRef);
 
   const highlighted = useMemo(() => highlightYaml(rawText), [rawText]);
 
@@ -119,6 +122,7 @@ export function YamlHighlighter({
           dangerouslySetInnerHTML={{ __html: highlighted }}
         />
         <textarea
+          ref={textareaRef}
           className="json-viewer__textarea"
           value={rawText}
           onChange={handleChange}

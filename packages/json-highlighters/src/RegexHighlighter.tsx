@@ -4,6 +4,7 @@ import { formatJson, tryFormatJson, type IndentStyle } from "./lib/formatJson";
 import { mapCaretAcrossFormat } from "./lib/caretMapping";
 import { themeAttr, type JsonHighlighterTheme } from "./lib/theme";
 import type { JsonEditorHandle, JsonValidity } from "./lib/editorApi";
+import { useOverlaySync } from "./lib/overlaySync";
 
 const DEFAULT_JSON = '{\n  "hello": "world"\n}';
 
@@ -103,6 +104,7 @@ export const RegexHighlighter = forwardRef<JsonEditorHandle, RegexHighlighterPro
   }, [rawText]);
   const highlightRef = useRef<HTMLPreElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useOverlaySync(highlightRef, textareaRef);
 
   // Regex-подсветке не нужна валидная JSON-структура, поэтому она
   // безусловно пересчитывается на каждое нажатие клавиши — текст

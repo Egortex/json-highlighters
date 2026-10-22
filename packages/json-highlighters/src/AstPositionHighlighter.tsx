@@ -5,6 +5,7 @@ import { formatJson, tryFormatJson, type IndentStyle } from "./lib/formatJson";
 import { mapCaretAcrossFormat } from "./lib/caretMapping";
 import { themeAttr, type JsonHighlighterTheme } from "./lib/theme";
 import type { JsonEditorHandle, JsonValidity } from "./lib/editorApi";
+import { useOverlaySync } from "./lib/overlaySync";
 
 const DEFAULT_JSON = '{\n  "hello": "world"\n}';
 
@@ -80,6 +81,7 @@ export const AstPositionHighlighter = forwardRef<JsonEditorHandle, AstPositionHi
   const [rawText, setRawText] = useState(() => tryFormatJson(initialJson, indent));
   const highlightRef = useRef<HTMLPreElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useOverlaySync(highlightRef, textareaRef);
 
   // Токенизируем на каждое изменение текста; result.valid/result.error
   // уходят хосту через onValidityChange и заодно не дают подсвечивать
