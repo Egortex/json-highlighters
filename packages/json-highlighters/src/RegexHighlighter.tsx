@@ -5,6 +5,7 @@ import { mapCaretAcrossFormat } from "./lib/caretMapping";
 import { themeAttr, type JsonHighlighterTheme } from "./lib/theme";
 import type { JsonEditorHandle, JsonValidity } from "./lib/editorApi";
 import { useOverlaySync } from "./lib/overlaySync";
+import { scrollCaretIntoView } from "./lib/scrollCaret";
 
 const DEFAULT_JSON = '{\n  "hello": "world"\n}';
 
@@ -144,6 +145,7 @@ export const RegexHighlighter = forwardRef<JsonEditorHandle, RegexHighlighterPro
       el.setSelectionRange(0, el.value.length);
       document.execCommand("insertText", false, formatted);
       el.setSelectionRange(mappedCaret, mappedCaret);
+      scrollCaretIntoView(el);
     }
     // textareaRef всегда указывает на смонтированный <textarea> к моменту,
     // когда хост может вызвать ref.format(); эта ветка — защита только от
@@ -184,6 +186,7 @@ export const RegexHighlighter = forwardRef<JsonEditorHandle, RegexHighlighterPro
       el.setSelectionRange(0, value.length);
       document.execCommand("insertText", false, formatted);
       el.setSelectionRange(mappedCaret, mappedCaret);
+      scrollCaretIntoView(el);
     } catch {
       // невалидный JSON после вставки — обычная вставка как есть.
     }
