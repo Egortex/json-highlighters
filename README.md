@@ -1,111 +1,77 @@
 # json-highlighters
 
-Монорепозиторий (npm workspaces) с библиотекой `@chepchik/json-highlighters` —
-три самописных подхода к живой, редактируемой подсветке синтаксиса JSON в
-React 18/19 плюс подсветка YAML — и демо-приложением, показывающим все
-четыре компонента рядом друг с другом.
+**English** · [Русский](./README.ru.md)
 
-```
-.
-├── packages/
-│   └── json-highlighters/   ← сама библиотека (публикуется в npm)
-├── example/                 ← демо-приложение на Vite + React, использует библиотеку
-└── e2e/                     ← Playwright-тесты против демо (playwright.config.ts в корне)
-```
+A monorepo (npm workspaces) with the `@chepchik/json-highlighters` library — live,
+editable JSON and YAML syntax highlighting for React 18/19 — and a demo app
+that shows all its editors side by side.
 
-## Быстрый старт
+- `packages/json-highlighters/` — the library, published to npm
+- `example/` — demo app (Vite + React)
+- `e2e/` — Playwright tests against the demo
 
-```bash
-npm install               # ставит зависимости всех workspace-пакетов сразу
-npm run build:lib         # собирает библиотеку (нужно перед первым npm run dev)
-npm run dev                # запускает демо-приложение (example/) на localhost:5173
-```
+## What it is
 
-Другие команды из корня:
+Four editor components, each a different approach:
 
-```bash
-npm run build              # собирает библиотеку, затем демо-приложение
-npm run build:example      # собирает только демо-приложение
-npm run lint                # линт демо-приложения (oxlint)
-npm test                    # юнит- и компонентные тесты библиотеки (Vitest)
-npm run coverage            # то же с отчётом покрытия
-npm run test:e2e            # собирает библиотеку и гоняет Playwright против демо
-```
+- **`RegexHighlighter`** — one regex marks up the raw text; a transparent
+  `<textarea>` sits over the coloured `<pre>`. Works on temporarily invalid JSON.
+- **`AstPositionHighlighter`** — a hand-written tokenizer that keeps every
+  token's position in the source string; same layered overlay, but
+  classification follows the grammar instead of a regex guess.
+- **`AstContentEditableHighlighter`** — editing happens inside the coloured
+  `contentEditable` element itself; recolouring is debounced and the caret is
+  restored after each repaint.
+- **`YamlHighlighter`** — the line-based YAML counterpart of the regex variant.
 
-## Библиотека — `@chepchik/json-highlighters`
+The components render **only the editor**. Indent selection, the "Format"
+button and the validity mark for the JSON editors are drawn by the host app:
+validity comes from `onValidityChange`, formatting is invoked through
+`ref.current?.format()`. YAML has neither formatting nor a validity callback.
+The AST editors' validity check is more permissive than `JSON.parse`; see the
+validation limitations in the library README.
 
-Три JSON-компонента с одинаковым API (`initialJson`, `title`, `theme`,
-`onChange`, `indent`, `onValidityChange`, `ref` с методом `format()`) и
-`YamlHighlighter`. Поддержка React 18 и 19, CSS одной строкой, тёмная/светлая
-тема (по умолчанию следует `prefers-color-scheme`, либо фиксируется явно).
+Full documentation: [`packages/json-highlighters/README.md`](./packages/json-highlighters/README.md).
 
-Компоненты рендерят **только редактор**: тулбар (отступ, «Форматировать») и
-галочку «✓ JSON валиден» рисует хост — по флагу из `onValidityChange` и
-вызовом `ref.current.format()`:
+## Development
 
-```tsx
-import "@chepchik/json-highlighters/styles.css";
-import {
-  RegexHighlighter,
-  AstPositionHighlighter,
-  AstContentEditableHighlighter,
-  YamlHighlighter,
-  type JsonEditorHandle,
-  type JsonValidity,
-} from "@chepchik/json-highlighters";
-```
-
-Полное описание того, как устроен каждый из подходов (regex-подсветка,
-AST-токенизатор с сохранением позиций, AST внутри `contentEditable`, YAML),
-компромиссы каждого, API форматирования и валидности, миграция с 0.1.x и как
-устроены темы — в
-**[`packages/json-highlighters/README.md`](./packages/json-highlighters/README.md)**.
-
-## Демо — `example/`
-
-Обычное Vite + React + TypeScript приложение, зависящее от
-`@chepchik/json-highlighters` через npm workspaces (симлинк в
-`node_modules/@chepchik/json-highlighters` на `packages/json-highlighters`).
-Показывает все четыре компонента на одной странице, панели делят ширину
-поровну (`.split-screen` в `example/src/App.css`), стартовые данные — из
-`example/src/data/sampleData.ts`.
-
-Тулбар и статус под каждой JSON-панелью рисует `example/src/JsonPanel.tsx` —
-это и есть образец того, как хосту собрать свой UI вокруг редактора
-(`onValidityChange` → галочка, `ref.format()` → кнопка «Форматировать»).
-По атрибуту `data-panel` на панелях e2e-тесты находят эти контролы.
-
-При изменении кода библиотеки её нужно пересобрать (`npm run build:lib`),
-чтобы демо подхватило новую версию `dist/` — `vite dev` в `example/` не
-следит за исходниками `packages/json-highlighters/src` напрямую.
-
-## Публикация в npm
-
-`.github/workflows/publish.yml` публикует пакет через **npm Trusted
-Publishing (OIDC)** — без токенов и секретов в GitHub. Аутентификация в
-registry происходит через `id-token: write` permission у джобы; npm сверяет
-её с настройками Trusted Publisher у пакета на своей стороне.
-
-**Одноразовая настройка** (нужна до первого успешного паблиша — работает и
-для ещё не опубликованного пакета):
-
-1. На [npmjs.com](https://www.npmjs.com) → страница пакета (или
-   `Access Tokens` → создать пакет-заглушку, если он ни разу не публиковался)
-   → раздел **Trusted Publisher**.
-2. Указать:
-   - **Organization or user**: `Egortex`
-   - **Repository**: `json-highlighters`
-   - **Workflow filename**: `publish.yml`
-   - **Allowed actions**: `npm publish`
-3. Больше ничего не нужно — `NPM_TOKEN`/`NODE_AUTH_TOKEN` в секретах
-   репозитория не используются.
-
-Запуск релиза:
+Run from the repository root:
 
 ```bash
-npm run release -- json-highlighters patch   # бампает версию, коммитит, тегает
-git push origin main json-highlighters-v0.1.1 # пуш тега запускает publish.yml
+npm install          # install workspaces; prepare builds the library
+npm run build:lib    # build the library, including CSS
+npm run dev          # start the Vite demo dev server
+npm test             # unit and component tests
+npm run coverage     # report: packages/json-highlighters/coverage/
+npm run build        # build library and demo
+npx playwright install chromium # install the E2E browser once
+npm run test:e2e     # build library, then run Playwright against the demo dev server
 ```
 
-Либо вручную — вкладка **Actions** → *Publish package to npm* → *Run
-workflow*.
+For library changes, run `npm run dev --workspace=packages/json-highlighters`
+in a second terminal. Watch mode rebuilds JavaScript and type declarations;
+CSS changes need `npm run copy:css --workspace=packages/json-highlighters`
+or a full library build.
+
+## What's done
+
+- **1.0.0** — the toolbar and status line were removed from the components:
+  new `indent` and `onValidityChange` props, `ref.format()` method,
+  exported `JsonEditorHandle` / `JsonValidity` types. Breaking change — see
+  the migration section in the library README.
+- `YamlHighlighter` added.
+- Tests: Vitest unit and component tests (100% line coverage in the current
+  run, with test files and `src/index.ts` excluded) and Playwright e2e tests
+  in Chromium.
+- Demo: `example/src/JsonPanel.tsx` shows how a host builds its own toolbar
+  around the editor.
+
+## What's fixed
+
+- **1.0.1** — page search (Ctrl+F) no longer splits the layers apart: the
+  found word used to "float" and mouse selection hit lines other than the
+  visible ones. Test `.d.ts` files no longer end up in the published package.
+- **1.0.2** — after auto-formatted paste or formatting, `RegexHighlighter`
+  and `AstPositionHighlighter` adjust vertical scrolling to show the caret.
+  The caret used to be placed correctly but off-screen, so it looked as if it
+  had jumped to the start.

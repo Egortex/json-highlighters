@@ -1,15 +1,17 @@
 # @chepchik/json-highlighters
 
-Три самописных подхода к живой, редактируемой подсветке синтаксиса JSON в
-React, плюс regex-подсветка YAML. Поддерживает React 18 и 19
+**English** · [Русский](https://github.com/Egortex/json-highlighters/blob/main/packages/json-highlighters/README.ru.md)
+
+Three hand-written approaches to live, editable JSON syntax highlighting in
+React, plus regex-based YAML highlighting. Supports React 18 and 19
 (`peerDependencies: react ^18.0.0 || ^19.0.0`).
 
 ```bash
 npm install @chepchik/json-highlighters
 ```
 
-CSS подключается отдельной строкой (один раз, где угодно до рендера
-компонентов — обычно в точке входа приложения):
+The CSS is imported with a separate line (once, anywhere before the
+components render — usually in the app entry point):
 
 ```ts
 import "@chepchik/json-highlighters/styles.css";
@@ -25,7 +27,7 @@ import {
 
 function App() {
   return (
-    <div style={{ display: "flex", gap: 16, height: 400 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 16, height: 400 }}>
       <RegexHighlighter initialJson={'{\n  "a": 1\n}'} onChange={console.log} />
       <AstPositionHighlighter />
       <AstContentEditableHighlighter title={null} theme="dark" />
@@ -35,23 +37,28 @@ function App() {
 }
 ```
 
-Каждый компонент неконтролируемый (хранит текст в собственном состоянии) и
-принимает опциональные пропы. У трёх JSON-компонентов начальный текст — `initialJson`;
-у `YamlHighlighter` — `initialYaml` (тот же смысл, другое имя, чтобы на месте
-использования было видно, какой формат ожидается):
+Every component is uncontrolled (it keeps the text internally) and
+takes optional props. The three JSON components take the initial text as
+`initialJson`; `YamlHighlighter` takes `initialYaml` (same meaning, different
+name, so the expected format is obvious at the call site):
 
-| Проп | Тип | Описание |
+| Prop | Type | Description |
 |---|---|---|
-| `initialJson` / `initialYaml` | `string` | Начальный текст. По умолчанию — маленький пример. |
-| `title` | `string \| null` | Заголовок панели (`<h3>`). `null` — не рендерить вовсе. |
-| `theme` | `"system" \| "light" \| "dark"` | По умолчанию `"system"` — следует `prefers-color-scheme` страницы-хоста. `"light"`/`"dark"` — фиксирует тему явно, независимо от системной. |
-| `onChange` | `(text: string) => void` | Вызывается с текущим текстом на каждое изменение (ввод, Tab, форматирование). |
-| `indent` | `"2" \| "4" \| "tab"` | Только у JSON-компонентов. Отступ для автоформата при монтировании/вставке и для `ref.format()` без аргумента. По умолчанию `"2"`. |
-| `onValidityChange` | `(v: { valid: boolean; error?: string }) => void` | Только у JSON-компонентов. Флаг валидности: при монтировании и при каждой его смене. |
+| `initialJson` / `initialYaml` | `string` | Initial text. Defaults to a small sample. |
+| `title` | `string \| null` | Panel heading (`<h3>`). Defaults to a component-specific heading; `null` renders no heading at all. |
+| `theme` | `"system" \| "light" \| "dark"` | Defaults to `"system"`, which follows the host page's `prefers-color-scheme`. `"light"`/`"dark"` pin the theme regardless of the system setting. |
+| `onChange` | `(text: string) => void` | Reports edits (typing, paste, Tab, formatting). Not called for initialization, including initial auto-formatting. |
+| `indent` | `"2" \| "4" \| "tab"` | JSON components only. Indent used for auto-formatting on mount/paste and for `ref.format()` without an argument. Defaults to `"2"`. |
+| `onValidityChange` | `(v: { valid: boolean; error?: string }) => void` | JSON components only. Called on mount and when validity or the error message changes. With `AstContentEditableHighlighter`, updates after typing are debounced by 400 ms. See the validation limitations below. |
 
-JSON-компоненты рендерят **только редактор** — ни тулбара, ни статус-строки
-внутри нет. Галочку валидности хост рисует сам по флагу из
-`onValidityChange`, а форматирование вызывает методом редактора через `ref`:
+`initialJson` / `initialYaml` are used only for initialization. To load different
+text, remount the component with a new `key`. Changing `indent` affects future
+formatting; it does not reformat the current text automatically. Tab always
+inserts two spaces in all four editors, regardless of `indent`.
+
+The JSON components render **only the editor** — there is no toolbar or
+status line inside. The host draws the validity mark from the
+`onValidityChange` flag and triggers formatting through the editor's `ref`:
 
 ```tsx
 import { useRef, useState } from "react";
@@ -62,39 +69,46 @@ function Editor() {
   const [validity, setValidity] = useState<JsonValidity>({ valid: true });
 
   return (
-    <>
-      <AstPositionHighlighter ref={editor} onValidityChange={setValidity} />
+    <div>
+      <div style={{ height: 400 }}>
+        <AstPositionHighlighter ref={editor} onValidityChange={setValidity} />
+      </div>
       <button disabled={!validity.valid} onClick={() => editor.current?.format("4")}>
-        Форматировать
+        Format
       </button>
-      <span>{validity.valid ? "✓ JSON валиден" : `⚠ ${validity.error}`}</span>
-    </>
+      <span>{validity.valid ? "✓ Valid JSON" : `⚠ ${validity.error}`}</span>
+    </div>
   );
 }
 ```
 
-`ref.format(indent?)` возвращает `true`, если текст переформатирован, и
-`false` (ничего не меняя), если он невалиден. Позиция курсора сохраняется.
+`ref.current?.format(indent?)` returns `true` when formatting succeeds, even
+if the result is unchanged, and `false` when formatting is rejected. It maps
+the caret to the corresponding token where possible; it does not preserve a
+selection range. If re-serialization changes the token count, the caret moves
+to the end.
 
-Каждый компонент занимает 100% высоты и ширины родителя (`display: flex;
-flex-direction: column; height: 100%`) — оберните в контейнер с заданной
-высотой.
+Every component uses `display: flex; flex-direction: column; height: 100%`.
+Wrap it in a container with a set height. Width is determined by the host
+layout; the component sets neither `width: 100%` nor `flex: 1` on its root.
 
-## Стили и темы
+## Styles and themes
 
-Все стили вынесены в один CSS-файл (`src/styles.css` → публикуется как
-`dist/styles.css`), доступный из пакета через subpath-экспорт:
+All styles live in a single CSS file (`src/styles.css`, published as
+`dist/styles.css`), available from the package through a subpath export:
 
 ```json
-"exports": {
-  ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-  "./styles.css": "./dist/styles.css"
+{
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./styles.css": "./dist/styles.css"
+  }
 }
 ```
 
-Внутри — обычные CSS custom properties (`--jh-bg`, `--jh-key`,
-`--jh-string`, `--jh-border` и т.д.), заскоупленные на класс `.json-viewer`
-(а не на `:root`), чтобы не протекать на остальную страницу хоста:
+Inside are plain CSS custom properties (`--jh-bg`, `--jh-key`,
+`--jh-string`, `--jh-border`, etc.), scoped to the `.json-viewer` class
+(not `:root`) so they don't leak into the rest of the host page:
 
 ```css
 .json-viewer {
@@ -104,147 +118,191 @@ flex-direction: column; height: 100%`) — оберните в контейне�
 }
 
 @media (prefers-color-scheme: light) {
-  .json-viewer { /* светлые значения */ }
+  .json-viewer { /* light values */ }
 }
 
-.json-viewer[data-theme="dark"] { /* явные тёмные значения */ }
-.json-viewer[data-theme="light"] { /* явные светлые значения */ }
+.json-viewer[data-theme="dark"] { /* explicit dark values */ }
+.json-viewer[data-theme="light"] { /* explicit light values */ }
 ```
 
-Проп `theme` компонента просто проставляет (или не проставляет)
-`data-theme` на корневой `<div>`:
+The component's `theme` prop simply sets (or doesn't set) `data-theme` on
+the root `<div>`:
 
-- `theme="system"` (по умолчанию) — атрибут не ставится, работает
-  `@media (prefers-color-scheme: ...)`, то есть цвета следуют настройке ОС/браузера
-  посетителя.
-- `theme="light"` / `theme="dark"` — ставится `data-theme`, который
-  побеждает медиа-запрос за счёт более высокой специфичности атрибутного
-  селектора (`.json-viewer[data-theme="dark"]` специфичнее, чем просто
-  `.json-viewer` внутри `@media`), поэтому тема остаётся зафиксированной
-  независимо от системной настройки.
+- `theme="system"` (default) — no attribute; `@media (prefers-color-scheme: ...)`
+  applies, so the colours follow the visitor's OS/browser setting.
+- `theme="light"` / `theme="dark"` — sets `data-theme`, which beats the media
+  query thanks to the higher specificity of the attribute selector
+  (`.json-viewer[data-theme="dark"]` is more specific than plain
+  `.json-viewer` inside `@media`), so the theme stays pinned regardless of
+  the system setting.
 
-Классы отдельных токенов используют те же переменные: `.json-key`,
-`.json-string`, `.json-number`, `.json-boolean`, `.json-null` — для трёх
-JSON-компонентов; `YamlHighlighter` красит теми же цветами через
-одноимённые `.yaml-key`, `.yaml-string` и т.д., плюс два своих —
-`.yaml-comment` (курсив, цвет `--jh-label`) и `.yaml-dash` (маркер списка,
-цвет `--jh-border-focus`).
+Token classes use the same variables: `.json-key`, `.json-string`,
+`.json-number`, `.json-boolean`, `.json-null` for the three JSON components;
+`YamlHighlighter` uses the same colours via the matching `.yaml-key`,
+`.yaml-string`, etc., plus two of its own — `.yaml-comment` (italic,
+`--jh-label` colour) and `.yaml-dash` (list marker, `--jh-border-focus`
+colour).
 
-## Четыре варианта
+## Four variants
 
-Три JSON-компонента работают с **одним и тем же типом входных данных** — сырым
-JSON-текстом, как будто он только что пришёл по сети
-(`fetch(url).then(r => r.text())`), а не с уже готовым JS-объектом. Четвёртый,
-`YamlHighlighter`, работает так же, но с сырым YAML-текстом. Каждая панель
-редактируется независимо.
+The three JSON components all take **the same kind of input** — raw JSON
+text, as if it had just arrived over the network
+(`fetch(url).then(r => r.text())`), not a ready-made JS object. The fourth,
+`YamlHighlighter`, works the same way with raw YAML text. Each panel is
+edited independently.
 
 ### 1. `RegexHighlighter`
 
-Прогоняет по сырому тексту один regex и оборачивает каждое совпадение (строка,
-число, `true`/`false`, `null`) в цветной `<span>`. Ключ объекта отличается от
-строки-значения хитрым приёмом внутри самого regex: совпадение может
-«прихватить» с собой хвостовой `\s*:` — если прихватило, значит это ключ.
+Runs a single regex over the raw text and wraps every match (string, number,
+`true`/`false`, `null`) in a coloured `<span>`. An object key is told apart
+from a string value by a trick inside the regex itself: a match may "grab"
+a trailing `\s*:` — if it did, it's a key.
 
-Поскольку подход только *размечает* текст и никогда не пересобирает его,
-подсвеченный результат всегда посимвольно совпадает по длине и позициям с тем,
-что находится в редакторе. Это делает живую редактируемую подсветку тривиальной:
-прозрачная `<textarea>` лежит поверх цветного `<pre>` — textarea владеет
-настоящим курсором и вводом текста, а `<pre>` снизу просвечивает цветом.
-Пересчитывается на каждое нажатие клавиши; текст не обязан быть валидным JSON —
-у regex вообще нет понятия «невалидно».
+Because this approach only *marks up* the text and never rebuilds it, the
+highlighted output always matches the editor content character for
+character, in length and position. That makes live editable highlighting
+trivial: a transparent `<textarea>` sits on top of the coloured `<pre>` —
+the textarea owns the real caret and input, and the `<pre>` underneath shows
+through with colour. It is recomputed on every keystroke; the text doesn't
+have to be valid JSON — a regex has no notion of "invalid" at all.
 
-**Компромисс:** корректность зависит от паттерна regex; экзотические edge-cases
-в грамматике токенов теоретически можно классифицировать неверно.
+**Trade-off:** correctness depends on the regex pattern; exotic edge cases in
+the token grammar could in theory be misclassified.
 
 ### 2. `AstPositionHighlighter`
 
-Самописный рекурсивный парсер (`src/lib/jsonTokenizer.ts`), который вместо
-построения дерева JS-значений выдаёт плоский список токенов — каждый со своим
-реальным смещением `start`/`end` в исходной строке. Строка помечается как `key`
-не по угадыванию соседней пунктуации, а потому что парсер структурно находится
-внутри `parseObject()`, сразу после `{` или `,` — по грамматике там может быть
-только ключ.
+A hand-written recursive parser (`src/lib/jsonTokenizer.ts`) that, instead of
+building a tree of JS values, emits a flat list of tokens — each with its real
+`start`/`end` offset in the source string. A string is marked as a `key` not
+by guessing from neighbouring punctuation, but because the parser is
+structurally inside `parseObject()`, right after `{` or `,` — where the
+grammar allows only a key.
 
-Если разбор ломается на середине (например, во время редактирования текст
-временно невалиден), функция возвращает токены, накопленные до места ошибки,
-плюс текст ошибки — неразобранный хвост текста рендерится без подсветки,
-а не пропадает.
+If parsing breaks halfway (say, the text is temporarily invalid while being
+edited), the function returns the tokens collected up to the error plus the
+error message — the unparsed tail is rendered without highlighting rather
+than disappearing.
 
-Поскольку позиции токенов сохраняются (ничего не переформатируется), здесь
-работает тот же приём наложения прозрачной textarea на `<pre>`, что и в
-regex-варианте — но раскраска теперь основана на грамматике, а не на догадке
-regex. Живая подсветка, пересчитывается на каждое нажатие (токенизация — это
-дешёвый линейный проход по строке).
+Because token positions are preserved (nothing is reformatted), the same
+transparent-textarea-over-`<pre>` overlay works here as in the regex variant —
+but the colouring is now based on the grammar rather than a regex guess.
+Live highlighting, recomputed on every keystroke (tokenizing is a cheap
+linear pass over the string).
 
-**Компромисс:** кода больше, чем в regex-варианте (настоящий парсер вместо
-одного паттерна), хотя токенизатор переиспользуется и в 3-м варианте.
+**Trade-off:** more code than the regex variant (a real parser instead of one
+pattern), although the tokenizer is reused by the third variant too.
+
+**Validation limitation:** the tokenizer checks structure but is more permissive
+than `JSON.parse`: for example, `01`, `1.`, `1e`, and invalid string escapes can
+produce `valid: true`. Both AST editors use this result for
+`onValidityChange`; `RegexHighlighter` uses `JSON.parse` instead. For strict
+validation, check the current text with `JSON.parse` in the host. `format()`
+also uses `JSON.parse` and can return `false` even if an AST editor reports
+`valid: true`.
 
 ### 3. `AstContentEditableHighlighter`
 
-Редактирование происходит прямо внутри раскрашенного элемента
-`contentEditable`, без второго наложенного слоя. Это вариант на случай, когда
-наложение слоёв в принципе не подходит (например, если логика подсветки сама
-по себе переформатирует текст, как это делает обычный AST-рендерер,
-пересобирающий значение с нуля) — здесь ничего не зависит от посимвольного
-совпадения позиций между двумя слоями, потому что слой всего один.
+Editing happens directly inside the coloured `contentEditable` element, with
+no second overlay layer. This variant is for cases where layering doesn't fit
+at all (for example, if the highlighting logic reformats the text by itself,
+as a typical AST renderer that rebuilds the value from scratch does) —
+nothing here depends on character-exact alignment between two layers,
+because there is only one.
 
-Загвоздка: замена `innerHTML` у `contentEditable`-элемента сбрасывает курсор
-браузера. Поэтому DOM этого компонента **не управляется React** после первого
-монтирования — обновления происходят императивно:
+The catch: replacing the `innerHTML` of a `contentEditable` element resets
+the browser caret. So this component's DOM is **not managed by React** after
+the first mount — updates are imperative:
 
-- `onInput` просто запоминает текущий текст в `ref` и (пере)запускает таймер
-  дебаунса на 400мс — так быстрый набор текста никогда не прерывается заменой
-  DOM.
-- когда пауза в наборе достигнута, `recolor()` сохраняет символьную позицию
-  курсора (через `Selection`/`Range`), заново токенизирует текст, строит
-  HTML-строку с подсветкой, подменяет `innerHTML`, а затем возвращает курсор
-  на то же смещение, обходя текстовые узлы нового DOM.
-- `Tab` вставляет два пробела через `document.execCommand("insertText", …)`,
-  потому что у `contentEditable` нет `selectionStart`/`selectionEnd`, как у
+- `onInput` stores the current text in a `ref`, calls `onChange`, and
+  (re)starts a 400 ms debounce timer for highlighting and validity updates.
+- once typing pauses, `recolor()` saves the caret's character offset (via
+  `Selection`/`Range`), re-tokenizes the text, builds the highlighted HTML
+  string, swaps `innerHTML`, and then restores the caret to the same offset
+  by walking the text nodes of the new DOM.
+- `Tab` inserts two spaces via `document.execCommand("insertText", …)`,
+  because `contentEditable` has no `selectionStart`/`selectionEnd` like a
   `<textarea>`.
 
-**Компромисс:** подсветка запаздывает на ~400мс после остановки набора текста
-(не мгновенно посимвольно, как в вариантах 1 и 2), и учёт курсора требует
-заметно больше кода — `contentEditable` в принципе не создан для того, чтобы
-им управлял фреймворк.
+**Trade-off:** highlighting lags ~400 ms behind the end of typing (not
+instant per keystroke as in variants 1 and 2), and caret tracking takes
+noticeably more code — `contentEditable` was never designed to be driven by
+a framework.
 
 ### 4. `YamlHighlighter`
 
-Младшая сестра `RegexHighlighter`: тот же приём наложения прозрачной
-`<textarea>` на цветной `<pre>`, но грамматика теперь построчная — YAML,
-в отличие от JSON, значимо использует отступы и позицию `#`/`:` в строке,
-а не только вложенность скобок.
+The little sibling of `RegexHighlighter`: the same transparent `<textarea>`
+over a coloured `<pre>`, but the grammar is now line-based — YAML, unlike
+JSON, gives meaning to indentation and to the position of `#`/`:` in a line,
+not just to bracket nesting.
 
-Один regex по порядку альтернатив ловит: строку в кавычках (двойных или
-одинарных, распознаётся первой — чтобы `#` или `:` внутри неё не приняли за
-комментарий/ключ), `#...` до конца строки (комментарий), маркер элемента
-списка `- ` в начале строки, ключ отображения (текст от начала строки, после
-отступа и необязательного `- ` — сам маркер списка через lookbehind в
-подсветку ключа не попадает — до ближайшего `: ` или `:` в конце строки),
-`true`/`false`, `null`/`~`, числа.
+One regex, by order of alternatives, catches: a quoted string (double or
+single quotes, matched first so that a `#` or `:` inside it isn't taken for
+a comment/key), `#...` to the end of the line (comment), the list item
+marker `- ` at the start of a line, a mapping key (text from the start of the
+line, after the indent and an optional `- ` — the list marker itself is kept
+out of the key highlight via lookbehind — up to the nearest `: ` or a `:` at
+the end of the line), `true`/`false`, `null`/`~`, numbers.
 
-Как и в regex-варианте для JSON, это разметка сырого текста без разбора
-дерева — не ломается на «временно неполном» YAML во время редактирования, но
-по той же причине не идеальна на всех edge-case'ах грамматики.
+As with the JSON regex variant, this is markup of raw text without parsing a
+tree — it doesn't break on "temporarily incomplete" YAML while editing, but
+for the same reason it isn't perfect on every grammar edge case.
 
-**Компромисс:** инлайн-flow-синтаксис (`{a: 1, b: 2}` в одну строку) и
-значения, содержащие `:` без пробела после (например, URL вида
-`http://host:port`), подсвечиваются не идеально. Метода `format()`, пропов
-`indent`/`onValidityChange` и `ref` тут нет: в отличие от JSON, у YAML нет одной канонической пере-сериализации через
-встроенный API рантайма (аналог `JSON.parse` + `JSON.stringify`) — пересборка
-потребовала бы полноценного YAML-парсера и сериализатора, что выходит за
-рамки регэксп-подсветки.
+**Trade-off:** inline flow syntax (`{a: 1, b: 2}` on one line) and values
+containing `:` without a following space (for example a URL like
+`http://host:port`) are not highlighted perfectly. There is no `format()`
+method, no `indent`/`onValidityChange` props and no `ref`: unlike JSON, YAML
+has no single canonical re-serialization through a built-in runtime API (an
+analogue of `JSON.parse` + `JSON.stringify`) — rebuilding it would need a
+full YAML parser and serializer, which is beyond regex highlighting.
 
-## Форматирование (отступы: пробелы/таб)
+#### Using the YAML editor
 
-Каждый JSON-компонент (`RegexHighlighter`, `AstPositionHighlighter`,
-`AstContentEditableHighlighter`) умеет форматировать текст методом
-`ref.format(indent?)` (`"2"` / `"4"` / `"tab"`). Своих кнопок и селектов у
-компонентов нет — UI для этого рисует хост (готовые подписи стилей —
-в экспортируемом `INDENT_OPTIONS`; пример — `example/src/JsonPanel.tsx`). У
-`YamlHighlighter` форматирования нет — см. компромисс в разделе про 4-й вариант выше.
+Only the common props: `initialYaml`, `title`, `theme`, `onChange`.
 
-Логика общая для всех трёх JSON-компонентов, вынесена в `src/lib/formatJson.ts`:
+```tsx
+import { YamlHighlighter } from "@chepchik/json-highlighters";
+
+function ComposeEditor({ initial, onChange }: { initial: string; onChange: (yaml: string) => void }) {
+  return (
+    <div style={{ height: 480 }}>
+      <YamlHighlighter initialYaml={initial} title={null} theme="dark" onChange={onChange} />
+    </div>
+  );
+}
+```
+
+How the editor behaves:
+
+- **Tab** inserts two spaces, not a tab character: most parsers forbid tabs
+  in YAML indentation.
+- **Paste (Ctrl+V)** is the browser's plain paste, without auto-formatting:
+  the text goes in as is, and the browser handles the caret and scrolling.
+- **No validation** — the component only highlights and reports no validity
+  flag. If you need it, check the text from `onChange` with your own parser
+  on the host side (for example the [`yaml`](https://www.npmjs.com/package/yaml)
+  package: `parse(text)` throws on invalid YAML).
+- The component is uncontrolled: `initialYaml` is read only on mount. To
+  replace the text from outside (a different file was loaded), remount the
+  component with a `key`.
+- Page search (Ctrl+F) works the same as in the layered JSON variants — see
+  "Page search and the caret" below.
+
+Token colours — the `.yaml-key`, `.yaml-string`, `.yaml-number`,
+`.yaml-boolean`, `.yaml-null`, `.yaml-comment`, `.yaml-dash` classes (see
+"Styles and themes").
+
+## Formatting (indent: spaces/tab)
+
+Every JSON component (`RegexHighlighter`, `AstPositionHighlighter`,
+`AstContentEditableHighlighter`) can format its text with
+`ref.format(indent?)` (`"2"` / `"4"` / `"tab"`). The components have no
+buttons or selects of their own — the host draws that UI (ready-made labels
+for the styles are in the exported `INDENT_OPTIONS`; see
+`example/src/JsonPanel.tsx` for an example). `YamlHighlighter` has no
+formatting — see the trade-off in the section on variant 4 above.
+
+The logic is shared by all three JSON components and lives in
+`src/lib/formatJson.ts`:
 
 ```ts
 export type IndentStyle = "2" | "4" | "tab";
@@ -255,60 +313,104 @@ export function formatJson(text: string, style: IndentStyle): string {
 }
 ```
 
-`JSON.parse` превращает текущий текст в настоящий JS-объект, а
-`JSON.stringify(parsed, null, indentParam)` собирает его обратно в текст —
-третий аргумент `stringify` и есть «стиль отступа». Если `JSON.parse` бросает
-исключение (текст невалиден), `formatJson` пробрасывает его выше —
-форматирование принципиально не может работать с битым JSON, в отличие от
-подсветки, которая у вариантов 1 и 2 может работать и с временно невалидным
-текстом. Поэтому `ref.format()` на невалидном тексте просто возвращает
-`false`, а флаг из `onValidityChange` удобно использовать, чтобы дизейблить
-кнопку на стороне хоста.
+`JSON.parse` turns the current text into a JavaScript value, and
+`JSON.stringify(parsed, null, indentParam)` turns it back into text — the
+third `stringify` argument is the "indent style". If `JSON.parse` throws (the
+text is invalid), `formatJson` rethrows — formatting fundamentally can't work
+on broken JSON, unlike highlighting, which in all three JSON variants also
+works on temporarily invalid text (AST variants highlight the parsed prefix).
+That's why `ref.format()` simply returns `false` on
+invalid text, and the `onValidityChange` flag is handy for disabling the
+button on the host side.
 
-## Общий код
+On mount, all valid `initialJson` text is formatted, including multiline text;
+invalid text is kept unchanged. On paste, the entire resulting document is
+formatted if `JSON.parse` accepts it; otherwise the inserted text stays
+unformatted. This automatic formatting also happens without calling `format()`.
 
-`src/lib/jsonTokenizer.ts` — токенизатор с сохранением позиций, используемый
-`AstPositionHighlighter` и `AstContentEditableHighlighter`, чтобы не дублировать
-логику разбора между ними. Экспортируется и из пакета (`tokenizeWithPositions`)
-на случай, если нужен сам разбор без готового UI.
+This is re-serialization, not a whitespace-only transform: it can normalize
+number notation and string escapes, reorder integer-like object keys, collapse
+duplicate keys, and change numbers outside JavaScript's exact numeric range.
+`JSON.parse` can return any JSON value, including primitives and arrays.
 
-`src/lib/formatJson.ts` — форматирование текста с выбранным стилем отступа
-(`formatJson`, `INDENT_OPTIONS`), тоже экспортируется отдельно.
+## Page search and the caret
 
-`src/lib/editorApi.ts` — типы внешнего API JSON-редакторов:
-`JsonEditorHandle` (то, что лежит в `ref`) и `JsonValidity` (аргумент
-`onValidityChange`). Экспортируются из пакета.
+In the three layered components (`RegexHighlighter`,
+`AstPositionHighlighter`, `YamlHighlighter`) the text is in the DOM twice:
+in the coloured `<pre>` and in the transparent `<textarea>` on top of it. To
+keep the layers aligned:
 
-## Миграция с 0.1.x
+- The `<pre>` has the `inert` attribute. Browser search (Ctrl+F) finds and
+  scrolls only the textarea, and the `<pre>` follows its scroll. Previously
+  search scrolled the `<pre>` itself: the found word "floated", and mouse
+  selection landed on lines other than the visible ones (fixed in 1.0.1).
+- If something else still scrolls the `<pre>`, it snaps straight back to
+  the textarea's position.
+- After a paste with auto-formatting and after `ref.current?.format()`,
+  `RegexHighlighter` and `AstPositionHighlighter` adjust vertical scrolling
+  to show the caret. Previously the caret was placed correctly but
+  off-screen, so it looked as if it had jumped to the start (fixed in 1.0.2).
 
-Раньше каждый JSON-компонент сам рендерил тулбар (селект «Отступ:», кнопку
-«Форматировать») и статус-строку «✓ JSON валиден». Теперь их нет — компонент
-рендерит только редактор:
+`AstContentEditableHighlighter` has a single layer, so it needs no overlay
+scroll synchronization. It has no explicit scroll-to-caret helper.
 
-| Было | Стало |
+## Shared code
+
+`src/lib/jsonTokenizer.ts` — the position-preserving tokenizer used by
+`AstPositionHighlighter` and `AstContentEditableHighlighter`, so the parsing
+logic isn't duplicated between them. Also exported from the package
+(`tokenizeWithPositions`) in case you need the parsing without the UI.
+
+`src/lib/formatJson.ts` — formatting text with the chosen indent style
+(`formatJson`, `INDENT_OPTIONS`), also exported separately.
+
+`src/lib/editorApi.ts` — types of the JSON editors' public API:
+`JsonEditorHandle` (what the `ref` holds) and `JsonValidity` (the
+`onValidityChange` argument). Exported from the package.
+
+`src/lib/overlaySync.ts` and `src/lib/scrollCaret.ts` — internal helpers for
+the layered components (`inert` and `<pre>` scroll sync, scrolling to the
+caret); not exported from the package.
+
+## Migrating from 0.1.x
+
+Previously every JSON component rendered its own toolbar (an "Indent:"
+select, a "Format" button) and a "✓ JSON valid" status line. They are gone —
+the component renders only the editor:
+
+| Before | Now |
 |---|---|
-| Селект «Отступ:» внутри компонента | Проп `indent` + свой селект на стороне хоста (подписи — `INDENT_OPTIONS`) |
-| Кнопка «Форматировать» | `ref.current.format(indent?)` |
-| Статус «✓ JSON валиден» / «⚠ …» | `onValidityChange={(v) => …}` + своя разметка |
-| CSS-классы `.json-viewer__toolbar`, `__select`, `__format-btn`, `__format-error`, `__status*` | Удалены из `styles.css` |
-| CSS-переменные `--jh-bg-btn`, `--jh-status-ok`, `--jh-status-error` | Удалены |
+| "Indent:" select inside the component | `indent` prop + your own select on the host side (labels in `INDENT_OPTIONS`) |
+| "Format" button | `ref.current.format(indent?)` |
+| "✓ JSON valid" / "⚠ …" status | `onValidityChange={(v) => …}` + your own markup |
+| CSS classes `.json-viewer__toolbar`, `__select`, `__format-btn`, `__format-error`, `__status*` | Removed from `styles.css` |
+| CSS variables `--jh-bg-btn`, `--jh-status-ok`, `--jh-status-error` | Removed |
 
-У `RegexHighlighter` раньше кнопка была активна и на невалидном JSON (с
-сообщением об ошибке после клика) — теперь `format()` на невалидном тексте
-просто возвращает `false`, как у остальных. Готовый пример хост-панели —
+`RegexHighlighter` used to keep the button enabled on invalid JSON too
+(showing an error after the click) — now `format()` simply returns `false`
+on invalid text, like the others. A ready-made host panel example is
 `example/src/JsonPanel.tsx`.
 
-## Разработка
+## Development
 
-Это часть монорепозитория; см. `example/` в корне репозитория — рабочее демо
-всех четырёх компонентов рядом друг с другом на одной странице.
+This is part of a monorepo; see `example/` at the repository root for a
+working demo of all four components side by side on one page.
+
+Run these commands from the repository root:
 
 ```bash
-npm install          # из корня репозитория (npm workspaces)
-npm run dev          # в этом пакете — пересборка в watch-режиме
-npm test             # юнит- и компонентные тесты (Vitest + jsdom)
-npm run coverage     # то же с отчётом покрытия (coverage/)
+npm install          # install npm workspaces; prepare builds the library
+npm run build:lib    # build the library, including dist/styles.css
+npm run dev          # start the Vite demo dev server
+npm test             # unit and component tests (Vitest + jsdom)
+npm run coverage     # report: packages/json-highlighters/coverage/
+npm run build        # build both library and demo
+npx playwright install chromium # install the E2E browser once
+npm run test:e2e     # build library, then test the demo in Chromium
 ```
 
-E2E-тесты (Playwright, против собранного демо) запускаются из корня
-репозитория — `npm run test:e2e`.
+E2E uses the demo's Vite dev server on port 5183, not a production demo build.
+For library development, run `npm run dev --workspace=packages/json-highlighters`
+in a second terminal to rebuild JavaScript and declarations in watch mode.
+That watch command does not copy CSS; after changing `src/styles.css`, run
+`npm run copy:css --workspace=packages/json-highlighters` or rebuild the library.
